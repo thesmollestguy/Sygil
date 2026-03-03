@@ -1,0 +1,18 @@
+[project]
+name = "S*"
+version = "1.0.0"
+description = "Programming language made to "
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [
+  {name = "Smol", email = "kingalexander471@gmail.com"}
+]
+dependencies = []
+license = "MIT"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta" 
+
+[tool.setuptools.packages.find]
+where = ["source"]
