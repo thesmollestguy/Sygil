@@ -1,6 +1,6 @@
 import struct
 
-__SYMBOLIC_VERSION__ = 1
+__SYGIL_VERSION__ = 1
 
 class UnknownVariable():
     def __init__(self):
@@ -31,10 +31,10 @@ class VM():
     def __init__(self, filePath):
         self.tokens = open(filePath, "rb")
         check = self.tokens.read(7)
-        if(check[:5] != b"symbl"):
-            raise FormatError(f"The provided file ({filePath}) is not a valid compiled Symbolic file.")
-        elif(check[5:] != __SYMBOLIC_VERSION__.to_bytes(2)):
-            raise VersionError(f"The provided file ({filePath}) is the wrong version ({int.from_bytes(check[5:])}, correct version is {__SYMBOLIC_VERSION__})")
+        if(check[:5] != b"sygil"):
+            raise FormatError(f"The provided file ({filePath}) is not a valid compiled Sygil file.")
+        elif(check[5:] != __SYGIL_VERSION__.to_bytes(2)):
+            raise VersionError(f"The provided file ({filePath}) is the wrong version ({int.from_bytes(check[5:])}, correct version is {__SYGIL_VERSION__})")
         self.variables = {}
         self.functions = {}
         self.return_val = None

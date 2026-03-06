@@ -1,6 +1,6 @@
 import struct
 
-__SYMBOLIC_VERSION__ = 1
+__SYGIL_VERSION__ = 1
 
 class Tokenizer():
     tokens = {
@@ -76,7 +76,7 @@ class Tokenizer():
 
     def tokenize(self, outputPath):
         with open(outputPath, "wb") as out:
-            out.write(b"symbl"+int(__SYMBOLIC_VERSION__).to_bytes(2))
+            out.write(b"sygil"+int(__SYGIL_VERSION__).to_bytes(2))
             while self.pos < len(self.source):
                 char = self.source[self.pos]
 
