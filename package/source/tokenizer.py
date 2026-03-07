@@ -21,8 +21,11 @@ class Tokenizer():
         "RQUOTE": b"\x0f",
         "DECL_VAR": b"\x10",
         "USE_VAR": b"\x11",
+        "DECL_CLASS": b"\x15",
+        "USE_CLASS": b"\x16",
+        "USE_SUBCLASS": b"\x17",
         "DECL_FUNC": b"\x1a",
-        "CALL": b"\x20",
+        "CALL": b"\x1b",
         "INT": b"\x30",
         "FLOAT": b"\x31",
         "LONG": b"\x32",
@@ -43,6 +46,9 @@ class Tokenizer():
     symbols = {
         ":": "DECL_VAR",
         "::": "DECL_FUNC",
+        ":@":"DECL_CLASS",
+        "@": "USE_CLASS",
+        "$@": "USE_SUBCLASS",
         "_": "CALL",
         "?1": "TRUE",
         "?0": "FALSE",
@@ -53,7 +59,7 @@ class Tokenizer():
         "<": "LANGLE",
         ">": "RANGLE",
         "~": "DEFAULT",
-        "|": "LPIPE", # Note: Logic needed to toggle LPIPE/RPIPE
+        "|": "LPIPE",
         '"': "QUOTE",
         ";": "SEPARATOR",
         "$": "USE_VAR",
@@ -98,6 +104,18 @@ class Tokenizer():
                     self.pos += 2
                     continue
 
+                if char == ":" and self.peek() == "@":
+                    out.write(self.tokens["DECL_CLASS"])
+                    self.pos += 2
+                    self.handle_identifier(out)
+                    continue
+
+                if char == "$" and self.peek() == "@":
+                    out.write(self.tokens["USE_SUBCLASS"])
+                    self.pos += 2
+                    self.handle_identifier(out)
+                    continue
+
                 # Handle Strings
                 if char == '"':
                     token_type = "RQUOTE" if self.in_quote else "LQUOTE"
@@ -121,7 +139,7 @@ class Tokenizer():
                     self.pos += 1
                     
                     # If it's a declaration or call, the next string is an identifier
-                    if s_key in ["DECL_VAR", "CALL", "USE_VAR"]:
+                    if s_key in ["DECL_VAR", "CALL", "USE_VAR", "USE_CLASS"]:
                         self.handle_identifier(out)
                     continue
 

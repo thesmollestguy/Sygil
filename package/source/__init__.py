@@ -1,3 +1,3 @@
-from .symbolic import *
+from .sygil import *
 from .syntaxValidator import *
 from .tokenizer import *

@@ -315,6 +315,12 @@ class VM():
         elif(funcName == "return"):
             self.return_val = params[0]
             return "RET"
+        
+    def OP_set_class(self):
+        nameLen = int.from_bytes(self.tokens.read(1))
+        className = self.tokens.read(nameLen).decode("utf-8")
+        subObjects = self.read_func_code()
+        
 
     def run(self, code=None):
         if(code == None):
@@ -331,5 +337,7 @@ class VM():
                 self.OP_set_function()
             elif(op == 0x20):
                 if self.OP_call() == "RET": break
+            elif(op == 0x15):
+                self.OP_set_class()
         if(len(self.old_tokens)>0): self.tokens = self.old_tokens.pop()
         return "RET"
