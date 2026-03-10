@@ -1,6 +1,6 @@
 import struct
 
-__SYGIL_VERSION__ = 1
+__SYGIL_VERSION__ = 2
 
 class UnknownVariable():
     def __init__(self):
@@ -27,6 +27,13 @@ class readableByteBuffer():
         except: return True
         else: return False
 
+class context():
+    def __init__(self, vars={}, funcs={}):
+        self.variables = {}
+        self.functions = {}
+    def __repr__(self):
+        return f"context(variables={self.variables}, functions={self.functions})"
+
 class VM():
     def __init__(self, filePath):
         self.tokens = open(filePath, "rb")
@@ -35,8 +42,10 @@ class VM():
             raise FormatError(f"The provided file ({filePath}) is not a valid compiled Sygil file.")
         elif(check[5:] != __SYGIL_VERSION__.to_bytes(2)):
             raise VersionError(f"The provided file ({filePath}) is the wrong version ({int.from_bytes(check[5:])}, correct version is {__SYGIL_VERSION__})")
-        self.variables = {}
-        self.functions = {}
+        self.contexts = {
+            "__global__":context()
+        }
+        self.activeContext="__global__"
         self.return_val = None
         self.old_tokens = []
 
@@ -115,25 +124,39 @@ class VM():
                     fDepth += 1
                 elif(p == b"\x0d" and not lSkip):
                     fDepth -= 1
-                elif((p == b"\x11" or p == b"\x10") and not lSkip):
+                elif((p == b"\x11" or p == b"\x10" or p == b"\x1b" or p == b"\x16") and not lSkip):
                     lSkip = 1
+                elif((p == b"\x30" or p == b"\x31") and not lSkip):
+                    lSkip = 4
+                elif((p == b"\x38") and not lSkip):
+                    lSkip = 2
+                elif((p == b"\x32") and not lSkip):
+                    lSkip = 6
                 curParam += p
         split.append(curParam)
         curParam = b""
+        if(split[-1] == b""):
+            split=split[:-1]
         return split
     
     def read_func_code(self):
         data = b""
         nByte = b""
-        while nByte != b"\x0b":
+        depth = 0
+        while nByte != b"\x0b" or depth>0:
             data+=nByte
             nByte = self.read(1)
+            if(nByte == b"\x0a"):
+                depth+=1
+            elif(nByte == b"\x0b"):
+                depth-=1
         return data
     
     def eval_exp(self, exp):
         output = None
         mode = "set"
         exp = readableByteBuffer(exp)
+        startingContext = self.activeContext
         while not exp.eof():
             b = exp.read(1)
             if(b==b"\x11"):
@@ -152,8 +175,52 @@ class VM():
                     output += varData
                 elif(mode == "pow"):
                     output **= varData
+                self.activeContext = startingContext
+                #print(varName, varData)
             elif(b==b"\x30"):
                 data=self.read_int(exp.read(4))
+                if(mode == "set"):
+                    output = data
+                elif(mode == "add"):
+                    output += data
+                elif(mode == "sub"):
+                    output -= data
+                elif(mode == "div"):
+                    output /= data
+                elif(mode == "mult"):
+                    output += data
+                elif(mode == "pow"):
+                    output **= data
+            elif(b==b"\x31"):
+                data=self.read_float(exp.read(4))
+                if(mode == "set"):
+                    output = data
+                elif(mode == "add"):
+                    output += data
+                elif(mode == "sub"):
+                    output -= data
+                elif(mode == "div"):
+                    output /= data
+                elif(mode == "mult"):
+                    output += data
+                elif(mode == "pow"):
+                    output **= data
+            elif(b==b"\x32"):
+                data=self.read_int(exp.read(6))
+                if(mode == "set"):
+                    output = data
+                elif(mode == "add"):
+                    output += data
+                elif(mode == "sub"):
+                    output -= data
+                elif(mode == "div"):
+                    output /= data
+                elif(mode == "mult"):
+                    output += data
+                elif(mode == "pow"):
+                    output **= data
+            elif(b==b"\x38"):
+                data=self.read_int(exp.read(2))
                 if(mode == "set"):
                     output = data
                 elif(mode == "add"):
@@ -172,7 +239,7 @@ class VM():
                     output = data
                 elif(mode == "add"):
                     output += data
-            elif(b==b"\x20"):
+            elif(b==b"\x1b"):
                 self.old_tokens.append(self.tokens)
                 self.tokens = exp
                 self.OP_call()
@@ -190,6 +257,15 @@ class VM():
                     output += data
                 elif(mode == "pow"):
                     output **= data
+            elif(b==b"\x16"):
+                nameLen = int.from_bytes(exp.read(1))
+                className = exp.read(nameLen).decode("utf-8")
+                if(className == "__global__"):
+                    self.activeContext = "__global__"
+                elif(className == "__parent__" and self.activeContext not in ["__global__","__function__"]):
+                    self.activeContext = ".".join(self.activeContext.split(".")[:-1])
+                else:
+                    self.activeContext = self.activeContext+"."+className
             elif(b==b"\x40"):
                 mode = "sub"
             elif(b==b"\x41"):
@@ -202,6 +278,7 @@ class VM():
                 mode == "pow"
             elif(b in b"\x0c\x0d\x50\x51\x35\x36"):
                 return b
+            #print(output)
         return output
     
     def eval_func_params(self, params:bytes):
@@ -215,22 +292,22 @@ class VM():
         return self.tokens.read(amnt)
     
     def set_func(self, funcName, params, code, defaults):
-        if(self.functions.get(funcName, UnknownVariable()) != UnknownVariable()):
-            self.functions.update({funcName:[params, code,defaults]})
+        if(self.contexts[self.activeContext].functions.get(funcName, UnknownVariable()) != UnknownVariable()):
+            self.contexts[self.activeContext].functions.update({funcName:[params, code,defaults]})
         else:
-            self.functions.__setitem__(funcName, [params, code, defaults])
+            self.contexts[self.activeContext].functions.__setitem__(funcName, [params, code, defaults])
     
     def get_func(self, funcName):
-        return self.functions.get(funcName)
+        return self.contexts[self.activeContext].functions.get(funcName)
     
     def set_var(self, varName, value):
-        if(self.variables.get(varName, UnknownVariable()) != UnknownVariable()):
-            self.variables.update({varName:value})
+        if(self.contexts[self.activeContext].variables.get(varName, UnknownVariable()) != UnknownVariable()):
+            self.contexts[self.activeContext].variables.update({varName:value})
         else:
-            self.variables.__setitem__(varName, value)
+            self.contexts[self.activeContext].variables.__setitem__(varName, value)
 
     def get_var(self, varName):
-        return self.variables.get(varName)
+        return self.contexts[self.activeContext].variables.get(varName)
 
     def OP_set_variable(self):
         nameLen = int.from_bytes(self.tokens.read(1))
@@ -243,6 +320,8 @@ class VM():
             data = self.read_float(self.read(4))
         elif(nByte == b"\x32"):
             data = self.read_int(self.read(6))
+        elif(nByte == b"\x38"):
+            data = self.read_int(self.read(2))
         elif(nByte == b"\x06"):
             data = [self.eval_exp(e) for e in self.split_func_params(self.read_list())]
         elif(nByte == b"\x08"):
@@ -277,24 +356,31 @@ class VM():
         self.read(1) # get the mandatory "<" token out of the stream
         params = self.eval_func_params(self.read_func_params())
         self.return_val = None
-        if(funcName in list(self.functions.keys())):
-            func_data = self.functions[funcName]
-            param_names = func_data[0] 
+        if(funcName in list(self.contexts[self.activeContext].functions.keys())):
+            func_data = self.contexts[self.activeContext].functions[funcName]
+            param_names = func_data[0]
             func_code = func_data[1]  
             param_defaults = func_data[2]
+
+            self.contexts.update({
+                "__function__":context()
+            })
         
-            old_vars = self.variables.copy()
+            prevContext = self.activeContext
+
+            self.activeContext = "__function__"
 
             for i, val in enumerate(params):
                 p_name = param_names[i].decode('utf-8')
                 if i < len(param_names):
-                    self.variables[p_name] = val
+                    self.contexts[self.activeContext].variables[p_name] = val
                 else:
-                    self.variables[p_name] = param_defaults[i]
-
+                    self.contexts[self.activeContext].variables[p_name] = param_defaults[i]
 
             self.run(readableByteBuffer(func_code))
-            self.variables = old_vars
+            self.activeContext = prevContext
+
+            self.contexts = {k: v for k, v in self.contexts.items() if not k.startswith("__function__")}
         elif(funcName == "print"):
             print(*params)
         elif(funcName == "if"):
@@ -318,9 +404,15 @@ class VM():
         
     def OP_set_class(self):
         nameLen = int.from_bytes(self.tokens.read(1))
-        className = self.tokens.read(nameLen).decode("utf-8")
+        className = self.activeContext + "." + self.tokens.read(nameLen).decode("utf-8")
         subObjects = self.read_func_code()
-        
+        self.contexts.update({
+            className:context()
+        })
+        prevContext = self.activeContext
+        self.activeContext = className
+        self.run(readableByteBuffer(subObjects))
+        self.activeContext = prevContext
 
     def run(self, code=None):
         if(code == None):
@@ -335,7 +427,7 @@ class VM():
                 self.OP_set_variable()
             elif(op == 0x1a):
                 self.OP_set_function()
-            elif(op == 0x20):
+            elif(op == 0x1b):
                 if self.OP_call() == "RET": break
             elif(op == 0x15):
                 self.OP_set_class()

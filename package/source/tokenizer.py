@@ -1,6 +1,6 @@
 import struct
 
-__SYGIL_VERSION__ = 1
+__SYGIL_VERSION__ = 2
 
 class Tokenizer():
     tokens = {
@@ -13,8 +13,7 @@ class Tokenizer():
         "RCURL": b"\x07",
         "LBRACK": b"\x08",
         "RBRACK": b"\x09",
-        "LPIPE": b"\x0a",
-        "RPIPE": b"\x0b",
+        "PIPE": b"\x0b",
         "LANGLE": b"\x0c",
         "RANGLE": b"\x0d",
         "LQUOTE": b"\x0e",
@@ -23,7 +22,6 @@ class Tokenizer():
         "USE_VAR": b"\x11",
         "DECL_CLASS": b"\x15",
         "USE_CLASS": b"\x16",
-        "USE_SUBCLASS": b"\x17",
         "DECL_FUNC": b"\x1a",
         "CALL": b"\x1b",
         "INT": b"\x30",
@@ -34,6 +32,7 @@ class Tokenizer():
         "TRUE": b"\x35",
         "FALSE": b"\x36",
         "STR": b"\x37",
+        "SHORT": b"\x38",
         "SUB": b"\x40",
         "ADD": b"\x41",
         "DIV": b"\x42",
@@ -48,7 +47,6 @@ class Tokenizer():
         "::": "DECL_FUNC",
         ":@":"DECL_CLASS",
         "@": "USE_CLASS",
-        "$@": "USE_SUBCLASS",
         "_": "CALL",
         "?1": "TRUE",
         "?0": "FALSE",
@@ -59,7 +57,7 @@ class Tokenizer():
         "<": "LANGLE",
         ">": "RANGLE",
         "~": "DEFAULT",
-        "|": "LPIPE",
+        "|": "PIPE",
         '"': "QUOTE",
         ";": "SEPARATOR",
         "$": "USE_VAR",
@@ -81,13 +79,29 @@ class Tokenizer():
         self.in_quote = False
 
     def tokenize(self, outputPath):
+        COMMENT = "#"
+        MULTI_COMMENT = "`"
+        commenting = 0
         with open(outputPath, "wb") as out:
             out.write(b"sygil"+int(__SYGIL_VERSION__).to_bytes(2))
             while self.pos < len(self.source):
                 char = self.source[self.pos]
 
-                # Skip whitespace (except newlines which are tokens)
-                if char in " \t\r":
+                if char == COMMENT:
+                    commenting = 1
+                    self.pos += 1
+                    continue
+                if char == MULTI_COMMENT:
+                    commenting = 0 if commenting == 2 else 2
+                    self.pos += 1
+                    continue
+                if char in " \t\r\n":
+                    self.pos += 1
+                    if(commenting == 1):
+                        commenting = 0
+                    continue
+
+                if(commenting>0):
                     self.pos += 1
                     continue
 
@@ -110,12 +124,6 @@ class Tokenizer():
                     self.handle_identifier(out)
                     continue
 
-                if char == "$" and self.peek() == "@":
-                    out.write(self.tokens["USE_SUBCLASS"])
-                    self.pos += 2
-                    self.handle_identifier(out)
-                    continue
-
                 # Handle Strings
                 if char == '"':
                     token_type = "RQUOTE" if self.in_quote else "LQUOTE"
@@ -129,11 +137,6 @@ class Tokenizer():
                 # Handle Single-char symbols
                 if char in self.symbols:
                     s_key = self.symbols[char]
-                    
-                    # Special case for Pipe toggling
-                    if char == "|":
-                        s_key = "RPIPE" if self.in_pipe else "LPIPE"
-                        self.in_pipe = not self.in_pipe
                     
                     out.write(self.tokens[s_key])
                     self.pos += 1
@@ -184,13 +187,17 @@ class Tokenizer():
         
         if num:
             is_float = "." in num
-            is_long = int(num) > 2147483647
+            is_long = abs(int(num)) > 2147483647
+            is_short = abs(int(num)) < 32768
             if(is_float):
                 out_file.write(self.tokens["FLOAT"])
                 val_bytes = struct.pack(">f", float(num))
             elif(is_long):
                 out_file.write(self.tokens["LONG"])
                 val_bytes = int(num).to_bytes(6, 'big', signed=True)
+            elif(is_short):
+                out_file.write(self.tokens["SHORT"])
+                val_bytes = int(num).to_bytes(2, 'big', signed=True)
             else:
                 out_file.write(self.tokens["INT"])
                 val_bytes = int(num).to_bytes(4, 'big', signed=True)
